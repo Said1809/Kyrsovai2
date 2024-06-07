@@ -1,0 +1,416 @@
+#include <SFML/Graphics.hpp>
+#include <time.h>
+#include <SFML/Audio.hpp>
+#include <filesystem>
+
+using namespace sf;
+
+// Константы для определения количества флаконов и шариков
+const int f = 5;
+const int fb = 16;
+
+// Переменные для подсчета шариков каждого цвета
+int blue = 0, red = 0, green = 0, yellow = 0;
+
+
+// Класс для управления звуками в игре
+class setSound {
+public:
+	SoundBuffer w, t, f, g;
+	Sound win, time, fall, give;
+	bool stopwin;
+
+	std::filesystem::path fall_ogg= "Sound/fall.ogg";
+	std::filesystem::path give_ogg = "Sound/give.ogg";
+	std::filesystem::path wine_ogg = "Sound/win.ogg";
+	std::filesystem::path time_ogg = "Sound/time.ogg";
+	setSound() {
+		f.loadFromFile(fall_ogg.string());
+		g.loadFromFile(give_ogg.string());
+		w.loadFromFile(wine_ogg.string());
+		t.loadFromFile(time_ogg.string());
+		win.setBuffer(w);
+		time.setBuffer(t);
+		fall.setBuffer(f);
+		give.setBuffer(g);
+
+		time.setLoop(true);
+
+		stopwin = false;
+	}
+};
+
+// Глобальный объект для управления звуками
+setSound sound;
+
+// Класс для генерации случайного распределения шариков
+class RandTabels {
+public:
+	int a[fb];// Массив для хранения распределения
+
+	// Конструктор класса заполняет массив случайными значениями
+	RandTabels() {
+		for (int i = 0; i < fb; i++)
+			a[i] = 0;
+
+		for (int i = 0; i < fb; i++)
+		{
+			int tmp = rand() % fb;
+			while (a[tmp] != 0)
+				tmp = rand() % fb;
+			a[tmp] = i + 1;
+		}
+
+		for (int i = 0; i < fb; i++)
+			a[i]--;
+	}
+};
+
+// Класс для управления флаконами
+class Flasks {
+public:
+	Sprite sprite[f];// Массив спрайтов для флаконов
+	int led[f];// Массив для отслеживания количества шариков в каждом флаконе
+
+	// Конструктор класса инициализирует спрайты и их позиции
+	Flasks(Texture& image) {
+		for (int i = 0; i < f; i++) {
+			sprite[i].setTexture(image);
+			sprite[i].setPosition(150 + 150 * i, 150);
+			sprite[i].setTextureRect(IntRect(0, 0, 84, 296));
+
+			if (i < f - 1)
+				led[i] = 4;
+			else
+				led[i] = 0;
+		}
+	}
+
+	// Метод для обновления визуального состояния флаконов
+	void update() {
+		for (int i = 0; i < f; i++)
+			if (led[i] == 4)
+				sprite[i].setTextureRect(IntRect(84, 0, 84, 296));
+			else
+				sprite[i].setTextureRect(IntRect(0, 0, 84, 296));
+	}
+};
+
+// Класс для управления шариками
+class Balls {
+public:
+	Sprite sprite[fb];// Массив спрайтов для шариков
+	FloatRect rect[fb];// Массив прямоугольников для определения позиций шариков
+	bool pusk[fb], fall[fb];// Флаги для управления движением шариков
+	int n, stop, col[fb];// Переменные для отслеживания состояния шариков
+
+	// Конструктор класса инициализирует спрайты и их начальные позиции
+	Balls(Texture& image) {
+		for (int i = 0; i < fb; i++) {
+			sprite[i].setTexture(image);
+
+			pusk[i] = fall[i] = false;
+		}
+
+		n = stop = 0;
+
+		RandTabels rt;
+		for (int i = 0; i < 4; i++) {
+			sprite[rt.a[i]].setTextureRect(IntRect(74 * 0, 0, 74, 74));
+
+			col[rt.a[i]] = 0;
+		}
+		for (int i = 4; i < 8; i++) {
+			sprite[rt.a[i]].setTextureRect(IntRect(74 * 1, 0, 74, 74));
+
+			col[rt.a[i]] = 1;
+		}
+		for (int i = 8; i < 12; i++) {
+			sprite[rt.a[i]].setTextureRect(IntRect(74 * 2, 0, 74, 74));
+
+			col[rt.a[i]] = 2;
+		}
+		for (int i = 12; i < 16; i++) {
+			sprite[rt.a[i]].setTextureRect(IntRect(74 * 3, 0, 74, 74));
+
+			col[rt.a[i]] = 3;
+		}
+
+		// ... (продолжение инициализации спрайтов и цветов шариков)
+
+		// Инициализация начальных позиций шариков
+
+		for (int j = 0; j < 4; j++)
+			for (int i = 0; i < 4; i++) {
+				rect[j * 4 + i].left = 155 + 150 * i;
+				rect[j * 4 + i].top = 145 + 74 * j;
+			}
+	}
+	// Метод для обновления позиций шариков
+	void update() {
+		for (int i = 0; i < fb; i++) {
+			if (pusk[i]) {
+				rect[i].top -= 1;
+
+				if (rect[i].top <= 71)
+					pusk[i] = false;
+			}
+
+			if (fall[i]) {
+				rect[i].top += 1;
+
+				if (rect[i].top >= stop)
+					fall[i] = false;
+			}
+		}
+
+		for (int i = 0; i < fb; i++)
+			for (int j = 0; j < fb; j++)
+				sprite[j].setPosition(rect[j].left, rect[j].top);
+	}
+};
+
+class Stopwatch {
+public:
+	Sprite min[2], sec[2], toc;
+	int m[2], s[2], ms;
+
+	Stopwatch(Texture& image) {
+		for (int i = 0; i < 2; i++) {
+			min[i].setTexture(image);
+			sec[i].setTexture(image);
+
+			min[i].setPosition(830 + 30 * i, 25);
+			sec[i].setPosition(900 + 30 * i, 25);
+
+			min[i].setTextureRect(IntRect(0, 0, 24, 38));
+			sec[i].setTextureRect(IntRect(0, 0, 24, 38));
+
+			m[i] = 0;
+			s[i] = 0;
+		}
+
+		toc.setTexture(image);
+		toc.setPosition(880, 25);
+		toc.setTextureRect(IntRect(240, 0, 24, 38));
+
+		ms = 0;
+	}
+
+	void update() {
+		ms++;
+
+		if (ms >= 1200) {
+			s[1]++;
+			ms = 0;
+		}
+
+		if (s[1] == 10) {
+			s[0]++;
+			s[1] = 0;
+		}
+
+		if (s[0] == 6) {
+			m[1]++;
+			s[0] = 0;
+		}
+
+		if (m[1] == 10) {
+			m[0]++;
+			m[1] = 0;
+		}
+
+		for (int i = 0; i < 2; i++) {
+			sec[i].setTextureRect(IntRect(24 * s[i], 0, 24, 38));
+			min[i].setTextureRect(IntRect(24 * m[i], 0, 24, 38));
+		}
+	}
+};
+
+int main() {
+	
+	std::filesystem::path ball_png = "Paint/ball.png";
+	std::filesystem::path flask_png = "Paint/flask.png";
+	std::filesystem::path znak_png = "Paint/znak.png";
+	std::filesystem::path youwin_png = "Pain/youwin.png";
+	std::filesystem::path pause_png = "Paint/pause.png";
+	std::filesystem::path time_png = "Paint/time.png";
+
+	srand(time(0));
+	RenderWindow window(VideoMode(1000, 500), "Balls in flasks!");
+	
+
+	
+	Texture b;
+	b.loadFromFile(ball_png.string());
+	Balls balls(b);
+
+	Texture t;
+	t.loadFromFile(flask_png.string());
+	Flasks flasks(t);
+
+
+
+	bool select = false;
+
+	for (int i = 0; i < fb; i++) {
+		if (balls.rect[i].left == 155 + 150 * 1 && balls.col[i] == 0)
+			blue++;
+		if (balls.rect[i].left == 155 + 150 * 2 && balls.col[i] == 1)
+			red++;
+		if (balls.rect[i].left == 155 + 150 * 3 && balls.col[i] == 2)
+			green++;
+		if (balls.rect[i].left == 155 + 150 * 4 && balls.col[i] == 3)
+			yellow++;
+	}
+
+	
+	
+	Texture zk;
+	zk.loadFromFile(znak_png.string());
+	Sprite znak[4];
+	for (int i = 0; i < 4; i++) {
+		znak[i].setTexture(zk);
+		znak[i].setTextureRect(IntRect(74 * i, 0, 74, 22));
+		znak[i].setPosition(155 + 150 * (i + 1), 145 + 74 * 4);
+	}
+
+	
+
+
+	Texture yw;
+	yw.loadFromFile(youwin_png.string());
+	Sprite youwin(yw);
+	youwin.setPosition(320, 50);
+
+	Texture ps;
+	ps.loadFromFile(pause_png.string());
+	Sprite Spause(ps);
+	Spause.setPosition(420, 50);
+
+	bool win = false, pause = false;
+
+	Texture tm;
+	tm.loadFromFile(time_png.string());
+	Stopwatch watch(tm);
+
+	sound.time.play();
+
+	while (window.isOpen())
+	{
+		Vector2i pos = Mouse::getPosition(window);
+		Vector2f bl[fb];
+		for (int i = 0; i < fb; i++)
+			bl[i] = balls.sprite[i].getPosition();
+		Event event;
+		while (window.pollEvent(event))
+		{
+			if (event.type == Event::Closed)
+				window.close();
+
+			if (!win) {
+				if (event.type == Event::KeyPressed)
+					if (event.key.code == Keyboard::Space)
+						if (!pause) {
+							pause = true;
+
+							sound.time.pause();
+						}
+						else if (pause) {
+							pause = false;
+
+							sound.time.play();
+						}
+
+				if (event.type == Event::MouseButtonPressed)
+					if (event.key.code == Mouse::Left && !pause) {
+						for (int i = 0; i < f; i++)
+							if (flasks.sprite[i].getGlobalBounds().contains(pos.x, pos.y)) {
+								if (!select && flasks.led[i] != 0) {
+									for (int j = 0; j < fb; j++)
+										if (bl[j].x == 155 + 150 * i && bl[j].y == 145 + 74 * (4 - flasks.led[i]) && !select) {
+											flasks.led[i]--;
+
+											select = true;
+
+											balls.pusk[j] = true;
+
+											balls.n = j;
+
+											if (i == 1 && balls.col[j] == 0)
+												blue--;
+											if (i == 2 && balls.col[j] == 1)
+												red--;
+											if (i == 3 && balls.col[j] == 2)
+												green--;
+											if (i == 4 && balls.col[j] == 3)
+												yellow--;
+
+											sound.give.play();
+										}
+								}
+								else if (select && flasks.led[i] != 4) {
+									select = false;
+
+									balls.rect[balls.n].left = 155 + 150 * i;
+
+									flasks.led[i]++;
+									balls.stop = 145 + 74 * (4 - flasks.led[i]);
+
+									balls.fall[balls.n] = true;
+
+									if (i == 4 && balls.col[balls.n] == 3)
+										yellow++;
+									if (i == 3 && balls.col[balls.n] == 2)
+						 				green++;
+									if (i == 2 && balls.col[balls.n] == 1)
+										red++;
+									if (i == 1 && balls.col[balls.n] == 0)
+										blue++;
+
+									sound.fall.play();
+								}
+							}
+					}
+			}
+		}
+
+		if (bl[balls.n].y == 71 && select)
+			balls.rect[balls.n].left = pos.x - 37;
+
+		if (blue == 4 && red == 4 && green == 4 && yellow == 4) {
+			win = true;
+
+			if (!sound.stopwin) {
+				sound.win.play();
+				sound.time.stop();
+
+				sound.stopwin = true;
+			}
+		}
+
+		flasks.update();
+		balls.update();
+		if (!win && !pause)
+			watch.update();
+		window.clear(Color(155, 175, 176));
+		for (int i = 0; i < fb; i++)
+			window.draw(balls.sprite[i]);
+		for (int i = 0; i < 4; i++)
+			window.draw(znak[i]);
+		for (int i = 0; i < f; i++)
+			window.draw(flasks.sprite[i]);
+		if (win)
+			window.draw(youwin);
+		if (pause)
+			window.draw(Spause);
+		for (int i = 0; i < 2; i++) {
+			window.draw(watch.min[i]);
+			window.draw(watch.sec[i]);
+		}
+		window.draw(watch.toc);
+		window.display();
+	}
+
+	return 0;
+} 
